@@ -16,6 +16,10 @@
 
 package com.example.mapdemo;
 
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.GoogleMap.OnCameraChangeListener;
@@ -27,12 +31,10 @@ import com.google.android.gms.maps.model.CameraPosition;
 import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 
-import android.Manifest;
 import android.app.AppOpsManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -42,7 +44,8 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.SystemClock;
 import android.provider.Settings;
-import android.support.v4.app.ActivityCompat;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
 import android.view.View;
@@ -55,7 +58,10 @@ import android.widget.Toast;
  */
 public class EventsDemoActivity extends AppCompatActivity
         implements OnMapClickListener, OnMapLongClickListener, OnCameraChangeListener,
-        OnMapReadyCallback, View.OnClickListener {
+        OnMapReadyCallback, View.OnClickListener,
+        GoogleApiClient.ConnectionCallbacks,
+        GoogleApiClient.OnConnectionFailedListener,
+        com.google.android.gms.location.LocationListener {
 
     private TextView mTapTextView;
 
@@ -75,6 +81,10 @@ public class EventsDemoActivity extends AppCompatActivity
 
     private LatLng currentLatLng;
 
+    private GoogleApiClient mGoogleApiClient;
+
+    private LocationRequest mLocationRequest;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -91,6 +101,38 @@ public class EventsDemoActivity extends AppCompatActivity
         SupportMapFragment mapFragment =
                 (SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
+
+        mGoogleApiClient = new GoogleApiClient.Builder(this)
+                .addConnectionCallbacks(this)
+                .addOnConnectionFailedListener(this)
+                .addApi(LocationServices.API)
+                .build();
+
+        long interval = 10 * 1000;   // 10 seconds, in milliseconds
+        long fastestInterval = 1 * 1000;  // 1 second, in milliseconds
+        float minDisplacement = 0;
+
+        mLocationRequest = LocationRequest.create()
+                .setPriority(LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY)
+                .setInterval(interval)
+                .setFastestInterval(fastestInterval)
+                .setSmallestDisplacement(minDisplacement);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        mGoogleApiClient.connect();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+
+        if (mGoogleApiClient.isConnected()) {
+            LocationServices.FusedLocationApi.removeLocationUpdates(mGoogleApiClient, this);
+            mGoogleApiClient.disconnect();
+        }
     }
 
     @Override
@@ -99,7 +141,7 @@ public class EventsDemoActivity extends AppCompatActivity
 
         currentLatLng = new LatLng(10.781927, 106.675786);
 
-        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(currentLatLng, 10));
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(currentLatLng, 15));
         mMap.addMarker(new MarkerOptions().position(currentLatLng).title("Marker"));
 
         mMap.setOnMapClickListener(this);
@@ -113,24 +155,21 @@ public class EventsDemoActivity extends AppCompatActivity
         mTapTextView.setText("tapped, point=" + point);
 
 //        mMap.moveCamera(CameraUpdateFactory.newLatLng(point));
-        mMap.clear();
-        mMap.addMarker(new MarkerOptions().position(point).title("Marker"));
+//        mMap.clear();
+//        mMap.addMarker(new MarkerOptions().position(point).title("Marker"));
     }
 
     private void setLocationManager() {
+        mLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         mMyLocationListener = new MyLocationListener();
         mLocationProvider = LocationManager.GPS_PROVIDER;
-        if (mLocationManager.getProvider(mLocationProvider) == null) {
-            mLocationManager.addTestProvider(mLocationProvider, true, true, true, true, true, true, true, 0, 5);
-        }
+        mLocationManager.addTestProvider(mLocationProvider, false, false, false, false, true, true, true, 1, 1);
         mLocationManager.setTestProviderEnabled(mLocationProvider, true);
+        mLocationManager.setTestProviderStatus(mLocationProvider, LocationProvider.AVAILABLE, null, System.currentTimeMillis());
         mLocationManager.requestLocationUpdates(mLocationProvider, 0l, 0f, mMyLocationListener);
     }
 
     private void setFakeLocation() {
-        if (mLocationManager == null) {
-            mLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-        }
         if (!checkGPS()) {
             return;
         }
@@ -138,25 +177,24 @@ public class EventsDemoActivity extends AppCompatActivity
             return;
         }
 
+        setLocationManager();
+
 //        mLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-        mMyLocationListener = new MyLocationListener();
-        mLocationProvider = LocationManager.GPS_PROVIDER;
-        if (mLocationManager.getProvider(mLocationProvider) == null) {
-            mLocationManager.addTestProvider(mLocationProvider, false, false, false,
-                    false, false, false, false, 0, 1);
-        }
-        mLocationManager.setTestProviderEnabled(
-                mLocationProvider, true);
-        mLocationManager.setTestProviderStatus(mLocationProvider, LocationProvider.AVAILABLE, null, System.currentTimeMillis());
-        mLocationManager.requestLocationUpdates(mLocationProvider, 0l, 0f, mMyLocationListener);
+//        mMyLocationListener = new MyLocationListener();
+//        mLocationProvider = LocationManager.GPS_PROVIDER;
+//        mLocationManager.removeTestProvider(mLocationProvider);
+//        mLocationManager.addTestProvider(mLocationProvider, false, false, false, false, true, true, true, 1, 1);
+//        mLocationManager.setTestProviderEnabled(mLocationProvider, true);
+//        mLocationManager.setTestProviderStatus(mLocationProvider, LocationProvider.AVAILABLE, null, System.currentTimeMillis());
+//        mLocationManager.requestLocationUpdates(mLocationProvider, 0l, 0f, mMyLocationListener);
 
         final Location loc = new Location(mLocationProvider);
         loc.setLatitude(currentLatLng.latitude);
         loc.setLongitude(currentLatLng.longitude);
         loc.setAltitude(0);
-//        loc.setSpeed(55.55f);
+        loc.setSpeed(5);
         loc.setTime(System.currentTimeMillis());
-        loc.setAccuracy(1f);
+        loc.setAccuracy(10);
         loc.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
 //        loc.setElapsedRealtimeNanos(System.nanoTime());
         Handler handler = new Handler();
@@ -165,7 +203,7 @@ public class EventsDemoActivity extends AppCompatActivity
             public void run() {
                 mLocationManager.setTestProviderLocation(mLocationProvider, loc);
             }
-        }, 1000);
+        }, 3000);
     }
 
     private void clearFakeLocation() {
@@ -196,11 +234,49 @@ public class EventsDemoActivity extends AppCompatActivity
         }
     }
 
+    @Override
+    public void onConnected(@Nullable Bundle bundle) {
+        Location location = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
+        if (location == null) {
+            LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
+            Toast.makeText(this, "location null", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "location not null", Toast.LENGTH_SHORT).show();
+            mMap.clear();
+            mMap.addMarker(new MarkerOptions().position(new LatLng(location.getLatitude(), location.getLongitude())).title("Marker"));
+        }
+    }
+
+    @Override
+    public void onConnectionSuspended(int i) {
+
+    }
+
+    @Override
+    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
+
+    }
+
+    @Override
+    public void onLocationChanged(Location location) {
+        mMap.clear();
+        mMap.addMarker(new MarkerOptions().position(new LatLng(location.getLatitude(), location.getLongitude())).title("Marker"));
+    }
+
     private class MyLocationListener implements LocationListener {
 
         @Override
         public void onLocationChanged(Location location) {
             Toast.makeText(EventsDemoActivity.this, "onLocationChanged\n" + location.getLatitude() + "\n" + location.getLongitude(), Toast.LENGTH_SHORT).show();
+            Location loc = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
+            if (loc == null) {
+                LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, EventsDemoActivity.this);
+                Toast.makeText(EventsDemoActivity.this, "location null", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(EventsDemoActivity.this, "location not null", Toast.LENGTH_SHORT).show();
+                mMap.clear();
+                mMap.addMarker(new MarkerOptions().position(new LatLng(loc.getLatitude(), loc.getLongitude())).title("Marker"));
+            }
         }
 
         @Override
@@ -221,7 +297,8 @@ public class EventsDemoActivity extends AppCompatActivity
 
     // ###Check if GPS provider is enabled
     private boolean checkGPS() {
-        if (!mLocationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+        LocationManager locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
             AlertDialog.Builder dialog = new AlertDialog.Builder(this);
             dialog.setMessage("Enable GPS");
             dialog.setPositiveButton("Open location setting",
