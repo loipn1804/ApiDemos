@@ -16,8 +16,12 @@
 
 package com.example.mapdemo;
 
+import com.example.service.MyService;
+import com.example.service.ServiceHelper;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.common.api.Status;
 import com.google.android.gms.location.LocationRequest;
 import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.CameraUpdateFactory;
@@ -35,6 +39,7 @@ import android.app.AppOpsManager;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -48,10 +53,16 @@ import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.CompoundButton;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.ToggleButton;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * This shows how to listen to some {@link GoogleMap} events.
@@ -71,6 +82,8 @@ public class EventsDemoActivity extends AppCompatActivity
 
     private Button btnDisable;
 
+    private ToggleButton toggleBtn;
+
     private GoogleMap mMap;
 
     private LocationManager mLocationManager;
@@ -85,6 +98,8 @@ public class EventsDemoActivity extends AppCompatActivity
 
     private LocationRequest mLocationRequest;
 
+    public static final int AWAIT_TIMEOUT_IN_MILLISECONDS = 2000;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -94,9 +109,24 @@ public class EventsDemoActivity extends AppCompatActivity
         mCameraTextView = (TextView) findViewById(R.id.camera_text);
         btnEnable = (Button) findViewById(R.id.btnEnable);
         btnDisable = (Button) findViewById(R.id.btnDisable);
+        toggleBtn = (ToggleButton) findViewById(R.id.toggleBtn);
 
         btnEnable.setOnClickListener(this);
         btnDisable.setOnClickListener(this);
+
+        SharedPreferences preferences = getSharedPreferences("screen", MODE_PRIVATE);
+        boolean is_show = preferences.getBoolean("is_show", false);
+        toggleBtn.setChecked(is_show);
+
+        toggleBtn.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
+            @Override
+            public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
+                SharedPreferences preferences = getSharedPreferences("screen", MODE_PRIVATE);
+                SharedPreferences.Editor editor = preferences.edit();
+                editor.putBoolean("is_show", isChecked);
+                editor.commit();
+            }
+        });
 
         SupportMapFragment mapFragment =
                 (SupportMapFragment) getSupportFragmentManager().findFragmentById(R.id.map);
@@ -117,6 +147,15 @@ public class EventsDemoActivity extends AppCompatActivity
                 .setInterval(interval)
                 .setFastestInterval(fastestInterval)
                 .setSmallestDisplacement(minDisplacement);
+
+        SharedPreferences.Editor editor = preferences.edit();
+        boolean is_first = preferences.getBoolean("is_first", true);
+        if (is_first) {
+            Intent intent = new Intent(this, MyService.class);
+            startService(intent);
+            editor.putBoolean("is_first", false);
+            editor.commit();
+        }
     }
 
     @Override
@@ -139,9 +178,12 @@ public class EventsDemoActivity extends AppCompatActivity
     public void onMapReady(GoogleMap map) {
         mMap = map;
 
-        currentLatLng = new LatLng(10.781927, 106.675786);
+        SharedPreferences localSharedPreferences = getApplicationContext().getSharedPreferences("prefs", 0);
+        double lat = Double.valueOf(localSharedPreferences.getString("lat", "10.777831")).doubleValue();
+        double ln = Double.valueOf(localSharedPreferences.getString("ln", "106.681524")).doubleValue();
+        currentLatLng = new LatLng(lat, ln);
 
-        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(currentLatLng, 15));
+        mMap.moveCamera(CameraUpdateFactory.newLatLngZoom(currentLatLng, 17));
         mMap.addMarker(new MarkerOptions().position(currentLatLng).title("Marker"));
 
         mMap.setOnMapClickListener(this);
@@ -154,18 +196,27 @@ public class EventsDemoActivity extends AppCompatActivity
         currentLatLng = point;
         mTapTextView.setText("tapped, point=" + point);
 
-//        mMap.moveCamera(CameraUpdateFactory.newLatLng(point));
-//        mMap.clear();
-//        mMap.addMarker(new MarkerOptions().position(point).title("Marker"));
+        SharedPreferences.Editor editor = getSharedPreferences("prefs", 0).edit();
+        editor.putString("lat", String.valueOf(currentLatLng.latitude));
+        editor.putString("ln", String.valueOf(currentLatLng.longitude));
+        editor.commit();
+
+        setFakeLocation();
+
+        mMap.moveCamera(CameraUpdateFactory.newLatLng(currentLatLng));
+        mMap.clear();
+        mMap.addMarker(new MarkerOptions().position(currentLatLng).title("Marker"));
+
+//        mMap.addMarker(new MarkerOptions().position(new LatLng(currentLatLng.latitude + 0.001, currentLatLng.longitude)).title("Marker 2"));
     }
 
     private void setLocationManager() {
         mLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         mMyLocationListener = new MyLocationListener();
         mLocationProvider = LocationManager.GPS_PROVIDER;
-        mLocationManager.addTestProvider(mLocationProvider, false, false, false, false, true, true, true, 1, 1);
+        mLocationManager.addTestProvider(mLocationProvider, false, false, false, false, false, false, false, 1, 1);
         mLocationManager.setTestProviderEnabled(mLocationProvider, true);
-        mLocationManager.setTestProviderStatus(mLocationProvider, LocationProvider.AVAILABLE, null, System.currentTimeMillis());
+//        mLocationManager.setTestProviderStatus(mLocationProvider, LocationProvider.AVAILABLE, null, System.currentTimeMillis());
         mLocationManager.requestLocationUpdates(mLocationProvider, 0l, 0f, mMyLocationListener);
     }
 
@@ -177,7 +228,7 @@ public class EventsDemoActivity extends AppCompatActivity
             return;
         }
 
-        setLocationManager();
+//        setLocationManager();
 
 //        mLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
 //        mMyLocationListener = new MyLocationListener();
@@ -188,22 +239,23 @@ public class EventsDemoActivity extends AppCompatActivity
 //        mLocationManager.setTestProviderStatus(mLocationProvider, LocationProvider.AVAILABLE, null, System.currentTimeMillis());
 //        mLocationManager.requestLocationUpdates(mLocationProvider, 0l, 0f, mMyLocationListener);
 
-        final Location loc = new Location(mLocationProvider);
-        loc.setLatitude(currentLatLng.latitude);
-        loc.setLongitude(currentLatLng.longitude);
-        loc.setAltitude(0);
-        loc.setSpeed(5);
-        loc.setTime(System.currentTimeMillis());
-        loc.setAccuracy(10);
-        loc.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
-//        loc.setElapsedRealtimeNanos(System.nanoTime());
-        Handler handler = new Handler();
-        handler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                mLocationManager.setTestProviderLocation(mLocationProvider, loc);
-            }
-        }, 3000);
+//        final Location location = new Location("gps");
+//        location.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
+//        location.setLatitude(currentLatLng.latitude);
+//        location.setLongitude(currentLatLng.longitude);
+//        location.setAccuracy(3.0f);
+//        location.setAltitude(0.0d);
+//        location.setTime(System.currentTimeMillis());
+//        location.setBearing(0.0f);
+//        Handler handler = new Handler();
+//        handler.postDelayed(new Runnable() {
+//            @Override
+//            public void run() {
+//                mLocationManager.setTestProviderLocation(mLocationProvider, location);
+//            }
+//        }, 3000);
+
+        ServiceHelper.startService(this);
     }
 
     private void clearFakeLocation() {
@@ -238,10 +290,14 @@ public class EventsDemoActivity extends AppCompatActivity
     public void onConnected(@Nullable Bundle bundle) {
         Location location = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
         if (location == null) {
-            LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
-            Toast.makeText(this, "location null", Toast.LENGTH_SHORT).show();
+            if (mGoogleApiClient.isConnected()) {
+                LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
+                Toast.makeText(this, "location null", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "mGoogleApiClient not connected", Toast.LENGTH_SHORT).show();
+                mGoogleApiClient.connect();
+            }
         } else {
-            Toast.makeText(this, "location not null", Toast.LENGTH_SHORT).show();
             mMap.clear();
             mMap.addMarker(new MarkerOptions().position(new LatLng(location.getLatitude(), location.getLongitude())).title("Marker"));
         }
@@ -266,16 +322,20 @@ public class EventsDemoActivity extends AppCompatActivity
     private class MyLocationListener implements LocationListener {
 
         @Override
-        public void onLocationChanged(Location location) {
-            Toast.makeText(EventsDemoActivity.this, "onLocationChanged\n" + location.getLatitude() + "\n" + location.getLongitude(), Toast.LENGTH_SHORT).show();
-            Location loc = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
-            if (loc == null) {
-                LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, EventsDemoActivity.this);
-                Toast.makeText(EventsDemoActivity.this, "location null", Toast.LENGTH_SHORT).show();
+        public void onLocationChanged(Location loc) {
+//            Toast.makeText(EventsDemoActivity.this, "onLocationChanged\n" + loc.getLatitude() + "\n" + loc.getLongitude(), Toast.LENGTH_SHORT).show();
+            Location location = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
+            if (location == null) {
+                if (mGoogleApiClient.isConnected()) {
+                    LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, EventsDemoActivity.this);
+                    Toast.makeText(EventsDemoActivity.this, "location null", Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(EventsDemoActivity.this, "mGoogleApiClient not connected", Toast.LENGTH_SHORT).show();
+                    mGoogleApiClient.connect();
+                }
             } else {
-                Toast.makeText(EventsDemoActivity.this, "location not null", Toast.LENGTH_SHORT).show();
                 mMap.clear();
-                mMap.addMarker(new MarkerOptions().position(new LatLng(loc.getLatitude(), loc.getLongitude())).title("Marker"));
+                mMap.addMarker(new MarkerOptions().position(new LatLng(location.getLatitude(), location.getLongitude())).title("Marker"));
             }
         }
 
@@ -373,5 +433,89 @@ public class EventsDemoActivity extends AppCompatActivity
         }
 
         return isMockLocation;
+    }
+
+    private void setMockLocation(final Location mockLocation) {
+        // We use a CountDownLatch to ensure that all asynchronous tasks complete within setUp. We
+        // set the CountDownLatch count to 1 and decrement this count only when we are certain that
+        // mock location has been set.
+//        final CountDownLatch lock = new CountDownLatch(1);
+
+        // First, ensure that the location provider is in mock mode. Using setMockMode() ensures
+        // that only locations specified in setMockLocation(GoogleApiClient, Location) are used.
+        LocationServices.FusedLocationApi.setMockMode(mGoogleApiClient, true)
+                .setResultCallback(new ResultCallback<Status>() {
+                    @Override
+                    public void onResult(Status status) {
+                        if (status.isSuccess()) {
+//                            Log.v(TAG, "Mock mode set");
+                            Toast.makeText(EventsDemoActivity.this, "Mock mode set", Toast.LENGTH_SHORT).show();
+                            // Set the mock location to be used for the location provider. This
+                            // location is used in place of any actual locations from the underlying
+                            // providers (network or gps).
+                            LocationServices.FusedLocationApi.setMockLocation(
+                                    mGoogleApiClient,
+                                    mockLocation
+                            ).setResultCallback(new ResultCallback<Status>() {
+                                @Override
+                                public void onResult(Status status) {
+                                    if (status.isSuccess()) {
+//                                        Log.v(TAG, "Mock location set");
+                                        Toast.makeText(EventsDemoActivity.this, "Mock location set\n" + mockLocation.getLatitude() + "\n" + mockLocation.getLongitude(), Toast.LENGTH_SHORT).show();
+                                        // Decrement the count of the latch, releasing the waiting
+                                        // thread. This permits lock.await() to return.
+//                                        Log.v(TAG, "Decrementing latch count");
+//                                        mMap.clear();
+//                                        mMap.addMarker(new MarkerOptions().position(new LatLng(mockLocation.getLatitude(), mockLocation.getLongitude())).title("mockLocation"));
+                                        Location location = LocationServices.FusedLocationApi.getLastLocation(mGoogleApiClient);
+                                        if (location == null) {
+                                            if (mGoogleApiClient.isConnected()) {
+                                                LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, EventsDemoActivity.this);
+                                                Toast.makeText(EventsDemoActivity.this, "location null", Toast.LENGTH_SHORT).show();
+                                            } else {
+                                                Toast.makeText(EventsDemoActivity.this, "mGoogleApiClient not connected", Toast.LENGTH_SHORT).show();
+                                                mGoogleApiClient.connect();
+                                            }
+                                        } else {
+                                            Toast.makeText(EventsDemoActivity.this, "getLastLocation\n" + location.getLatitude() + "\n" + location.getLongitude(), Toast.LENGTH_SHORT).show();
+                                            mMap.clear();
+                                            mMap.addMarker(new MarkerOptions().position(new LatLng(location.getLatitude(), location.getLongitude())).title("getLastLocation"));
+                                        }
+//                                        lock.countDown();
+                                    } else {
+//                                        Log.e(TAG, "Mock location not set");
+                                        Toast.makeText(EventsDemoActivity.this, "Mock location not set", Toast.LENGTH_SHORT).show();
+                                    }
+                                }
+                            });
+                        } else {
+//                            Log.e(TAG, "Mock mode not set");
+                            Toast.makeText(EventsDemoActivity.this, "Mock mode not set", Toast.LENGTH_SHORT).show();
+                        }
+                    }
+                });
+
+//        try {
+//            // Make the current thread wait until the latch has counted down to zero.
+////            Log.v(TAG, "Waiting until the latch has counted down to zero");
+//            lock.await(AWAIT_TIMEOUT_IN_MILLISECONDS, TimeUnit.MILLISECONDS);
+//        } catch (InterruptedException exception) {
+////            Log.i(TAG, "Waiting thread awakened prematurely", exception);
+//        }
+    }
+
+    /**
+     * Creates and returns a Location object set to the coordinates of the North Pole.
+     */
+    private Location createNorthPoleLocation(LatLng latLng) {
+        Location mockLocation = new Location("test");
+        mockLocation.setLatitude(latLng.latitude);
+        mockLocation.setLongitude(latLng.longitude);
+        mockLocation.setAccuracy(10f);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR1) {
+            mockLocation.setElapsedRealtimeNanos(SystemClock.elapsedRealtimeNanos());
+        }
+        mockLocation.setTime(System.currentTimeMillis());
+        return mockLocation;
     }
 }

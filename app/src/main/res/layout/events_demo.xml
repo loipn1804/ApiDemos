@@ -59,4 +59,14 @@
         android:layout_marginBottom="10dp"
         android:layout_marginRight="10dp"
         android:text="Disable" />
+
+    <ToggleButton
+        android:id="@+id/toggleBtn"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:layout_gravity="center_horizontal|bottom"
+        android:layout_marginBottom="20dp"
+        android:background="@drawable/btn_toggle"
+        android:textColor="@color/white"
+        android:textSize="15sp" />
 </FrameLayout>
